@@ -1,11 +1,6 @@
 # cvitae
 
-**Tailoring a job application to a posting, in minutes, without inventing
-anything.**
-
-**[Open the staging build →](https://cvitae-app.netlify.app/)** — the
-application as it currently stands. Whatever you type there stays in your own
-browser.
+**Tailoring a job application to a posting, without inventing anything.**
 
 A modern job search is a volume game, and every way of playing it is bad. The
 employer screens with a parser before a person reads anything, so a CV that is
@@ -19,59 +14,48 @@ true sentences around it.
 
 These repositories are the fourth option. A model reads the posting, proposes an
 arrangement of facts **that already exist in your CV**, and a person approves
-every one of them before a PDF exists. The model selects, orders and rewords. It
-does not author facts, and the code is arranged so that it cannot.
+every one of them before anything leaves the machine. The model selects, orders
+and rewords. It does not author facts, and the code is arranged so that it
+cannot.
 
 ## The repositories
 
 | | What it is | What it holds |
 | --- | --- | --- |
-| **[cvitae](https://github.com/cvitae-org/cvitae)** | the application — an editable EN/PL CV, vacancy research, and evidence review before anything is sent | your CV, your researched offers and your submissions, in your own browser |
-| **[cvitae-agent-runtime](https://github.com/cvitae-org/cvitae-agent-runtime)** | the AI layer — providers, prompts and tool definitions behind a single `run()`, so nothing above it holds a key or picks a model | the provider keys, the prompts, and a local index under `~/.cvitae` |
-| **[cvitae-mail](https://github.com/cvitae-org/cvitae-mail)** | the mailbox, alone in a process — it writes drafts, and no route above it can make it send | one Gmail refresh token, and nothing else |
+| **[cvitae-studio](https://github.com/cvitae-org/cvitae-studio)** (private for now) | the macOS desktop app: a CV kept in Polish and English, offers collected from job boards and queried with SQL, a board of the ones being pursued, a chat about the CV, and a built-in browser where an application form is filled in and a person presses Send | your provider keys, in the macOS login Keychain |
+| **[cvitae-agent-runtime](https://github.com/cvitae-org/cvitae-agent-runtime)** | the AI layer, a separate process the app starts and talks to: the capabilities, their prompts and the checks on what comes back, the providers, and a record of what each answer was given | everything you keep, in one SQLite file under `~/.cvitae` |
+| **[cvitae-mail](https://github.com/cvitae-org/cvitae-mail)** | a mailbox companion, alone in a process: it writes drafts, and no route above it can make it send. The desktop app does not use it | one Gmail refresh token, and nothing else |
+| **[cvitae](https://github.com/cvitae-org/cvitae)** (archived) | the first version: a web app that kept everything in your browser | — |
 
-Offers arrive the way you already have them — a link, text pasted out of your
-own browser, or a list imported in one go. Each one is read once into structured
-facts and requirements quoted in the posting's own words, and the original text
-is kept alongside them, so a row still works after the posting has been taken
-down.
-
-Everything except the application itself is optional and written to be absent.
-With no runtime running, cvitae still edits and exports a CV. With no mailbox
-connected, the app says so and the PDF simply downloads.
+Offers arrive the way you already have them — a link, a search across the
+boards you pick, or a page opened in the app's own browser. Each one is read
+once into structured facts, and the original text is kept alongside them, so a
+row still works after the posting has been taken down.
 
 ## How the pieces fit
 
 ```mermaid
 flowchart LR
   You(["you"])
-  Offers[("offers<br/>a link · pasted text · an imported list")]
-
-  subgraph browser["your browser"]
-    App["cvitae<br/>CV · research · review"]
-  end
+  Boards[("job boards<br/>a link · a search · the built-in browser")]
 
   subgraph machine["your machine"]
-    Runtime["cvitae-agent-runtime<br/>providers · prompts · tools"]
-    Mail["cvitae-mail<br/>holds the Gmail token"]
+    Studio["cvitae studio<br/>CV · offers · board · chat · browser"]
+    Runtime["cvitae-agent-runtime<br/>capabilities · checks · one SQLite file"]
   end
 
-  Draft["a draft in your Drafts folder"]
+  Model["a model<br/>local through Ollama, or hosted on your own key"]
 
-  You --> App
-  Offers --> App
-  App --> Runtime
-  Runtime --> Mail
-  Mail --> Draft
-  Draft --> You
+  You --> Studio
+  Boards --> Studio
+  Studio --> Runtime
+  Runtime --> Model
 ```
 
-The split is not architectural taste. It is about what one mistake costs. A
-provider key that leaks is a bill; a mailbox token that leaks is read access to
-everything you have ever been sent plus the ability to write as you. Keeping
-them in different processes means a single failure is one of those things and
-never both — and the process holding the mailbox holds neither the CV nor the
-model keys.
+The app draws and the runtime decides. The app supplies what only a desktop app
+can — the window, the Keychain, a browser — and every call to a model goes
+through the runtime, where what the model is sent and what comes back are both
+checked.
 
 ## Three rules the whole thing follows
 
@@ -83,53 +67,58 @@ model at all: asked to quote a summary paragraph, small models returned the
 cannot hallucinate. One model call writes the covering letter, because that is
 the only text genuinely absent from the input.
 
-**The model acts through tools, or it does not act.** Where a model can call
-tools at all, it never receives a database handle, a file path or a URL to
-fetch. Job postings are text strangers wrote — anyone can put prose on a board —
-and that text goes into model context, so a model talked into something by a
-posting can return something unhelpful and cannot reach anything. Drafting an email is deliberately not a tool: untrusted
-input, a private CV and an outbound channel in one tool set is the whole
-exfiltration triangle, and the third side is simply never built.
+**The model sees only what it is given, and so can you.** It never receives a
+database handle, a file path or a URL to fetch. Job postings are text strangers
+wrote, and that text goes into model context, so a model talked into something
+by a posting can return something unhelpful and cannot reach anything. Every
+answer in the chat comes with the runtime's record of what the model was given.
+A person can leave a piece of the CV out of a conversation, choose which pieces a
+message is made from, and see a message before it is sent. When saved offers are
+compared, the answer cites the block behind each claim by number, and a number
+that points at nothing is listed apart rather than passed on.
 
 **Suggestions, never sends.** Where an application goes is decided without a
 model, by weighing facts a web page cannot assert about itself — is the address
 on the employer's own domain, did two independent sources name it — because
 postings that exist to harvest CVs are a real business and a CV is a complete
-identity package. The result is ranked with its evidence attached and it warns
-rather than blocks. Applications leave as drafts. A person presses Send.
+identity package. When the app fills in an application form, which controls it
+may press is decided by what they are, not by what they say, and it stops before
+the last step. A person presses Send.
 
 ## Where the data lives
 
-- **In your browser.** No account, no login, no server-side profile, no
-  database. Which also means no operator-side copy to breach, to subpoena or to
-  sell — and no restore, since clearing site data is deletion.
-- **On your machine**, if you run the runtime: one plain `cv.json` you can read
-  and correct by hand, plus a derived index that any `POST /reindex` rebuilds.
-  AI calls are logged as metadata only — model, latency, tokens, status, content
-  *hashes* — never prompts, never responses. `rm -rf ~/.cvitae` is the whole
-  deletion story.
-- **Nowhere else.** Model calls carry a narrowed payload: contact details, CV
-  source metadata and the vacancy's URL never reach the model. Run local models
-  through Ollama and no model call leaves the machine at all; use a hosted
-  provider and the bill is on your own account, with your own key, kept nowhere.
+- **On your machine.** Everything you keep — the CV, offers, the board,
+  conversations — is one SQLite file, readable by your account only, copied aside
+  before every upgrade and refused by a build older than the one that wrote it.
+  Provider keys live in the macOS login Keychain. Model calls are logged as
+  metadata only — sizes, counts, timings, a code — never prompts, never
+  responses.
+- **Nowhere else, unless you choose a hosted model.** Run local models through
+  Ollama and no model call leaves the machine. Use a hosted provider and the bill
+  is on your own account, with your own key. Even then the name, email, phone
+  number and links in your CV are masked before anything is sent and put back
+  into the answer; the CV's search index is built locally unless you pick a
+  hosted embedder, which is masked the same way. Importing a CV is the one call
+  that needs your details as they are, so the app asks before a hosted model
+  reads it.
 
 ## Start here
 
-[Staging is here](https://cvitae-app.netlify.app/) if you would rather look than
-read. Otherwise start with [cvitae](https://github.com/cvitae-org/cvitae) — it
-is the thing you use, and its README explains the tailoring model, the ATS-safe PDF pipeline and
-what is protected from the model. The
-[runtime](https://github.com/cvitae-org/cvitae-agent-runtime) is worth reading
-next if you care how the AI side is wired, and it carries the measurements
-behind most of the decisions above.
+The [runtime](https://github.com/cvitae-org/cvitae-agent-runtime) is the part
+that is public, and its README is the place to read how the AI side is wired:
+why the boundaries are shaped as they are, what each capability checks before it
+returns, and what reaches a model. Its `docs/measurements` keep the runs behind
+the decisions, with every answer.
 
 ## Status
 
-Personal-scale software, built in the open, verified against real data rather
-than assumed to work: CV extraction is checked against a real CV, drafting end
-to end on a local model, PDFs re-parsed from their own bytes before download,
-and the mail path exercised against a live mailbox. The READMEs are unusually
-frank about what is measured, what is still unverified and what a given
-guarantee does *not* cover. That is deliberate — a tool that decides what a
-model may claim about your career should be honest about what it claims for
-itself.
+Personal-scale software, built in the open where it can be, and verified
+against real data rather than assumed to work. CV extraction is checked against
+a real CV, and the chat was measured on a local model: answering from pieces of the CV attached to a
+message got all 48 questions right, in English and Polish, as the model's own
+search tools did; comparing five saved offers put the best fit first in 32 runs
+of 32, and none of its 491 citations pointed at nothing. No hosted model has been
+measured yet. The READMEs are unusually frank about what is measured, what is
+still unverified and what a given guarantee does *not* cover. That is deliberate
+— a tool that decides what a model may claim about your career should be honest
+about what it claims for itself.
